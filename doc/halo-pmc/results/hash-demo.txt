@@ -1,0 +1,32 @@
+SELECT 10000
+SELECT 50000
+ANALYZE
+ANALYZE
+SET
+SET
+SET
+SET
+SET
+SET
+SET
+psql:demo.sql:6: INFO:  HaloPMC target=MultiExecPrivateHash.loop period=0 samples=1
+psql:demo.sql:6: INFO:  PMC cycles raw=5203783 boundary_reads=2 source=thread_selfcounts(user+system)
+psql:demo.sql:6: INFO:  PMC instructions raw=24119987 boundary_reads=2 source=thread_selfcounts(user+system)
+                             QUERY PLAN
+---------------------------------------------------------------------
+ Aggregate (actual rows=1 loops=1)
+   ->  Hash Join (actual rows=10000 loops=1)
+         Hash Cond: (pmc_probe.id = pmc_build.id)
+         ->  Seq Scan on pmc_probe (actual rows=50000 loops=1)
+         ->  Hash (actual rows=10000 loops=1)
+               Buckets: 16384  Batches: 1  Memory Usage: 480kB
+               ->  Seq Scan on pmc_build (actual rows=10000 loops=1)
+ Planning Time: 0.142 ms
+ Execution Time: 8.174 ms
+(9 rows)
+
+RESET
+ matched_rows
+--------------
+        10000
+(1 row)

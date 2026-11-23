@@ -53,6 +53,7 @@
 #include "libpq/pqsignal.h"
 #include "mb/pg_wchar.h"
 #include "mb/stringinfo_mb.h"
+#include "executor/halo_pmc.h"
 #include "miscadmin.h"
 #include "nodes/print.h"
 #include "optimizer/optimizer.h"
@@ -4369,6 +4370,16 @@ PostgresMain(int argc, char *argv[],
 	 * likewise can't be done until GUC settings are complete)
 	 */
 	process_session_preload_libraries();
+
+	/* A startup setting can preload the dictionary; SET loads it on demand. */
+	if (!am_walsender && halo_pmc_list && halo_pmc_list[0])
+	{
+		StartTransactionCommand();
+		PushActiveSnapshot(GetTransactionSnapshot());
+		PmcInit();
+		PopActiveSnapshot();
+		CommitTransactionCommand();
+	}
 
 	
 	postInitHooks();

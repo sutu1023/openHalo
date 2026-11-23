@@ -31,6 +31,7 @@
 #include "catalog/pg_statistic.h"
 #include "commands/tablespace.h"
 #include "executor/execdebug.h"
+#include "executor/halo_pmc.h"
 #include "executor/hashjoin.h"
 #include "executor/nodeHash.h"
 #include "executor/nodeHashjoin.h"
@@ -144,6 +145,9 @@ MultiExecPrivateHash(HashState *node)
 	TupleTableSlot *slot;
 	ExprContext *econtext;
 	uint32		hashvalue;
+	PmcScope   *pmc = NULL;
+	int			period = 0;
+	int			until_sample = 0;
 
 	/*
 	 * get state info from node
@@ -161,16 +165,38 @@ MultiExecPrivateHash(HashState *node)
 	 * Get all tuples from the node below the Hash node and insert into the
 	 * hash table (or temp files).
 	 */
+	if (unlikely(halo_pmc_list && halo_pmc_list[0]))
+	{
+		pmc = PmcOpen(node->ps.state->es_query_cxt);
+		if (pmc)
+		{
+			period = halo_pmc_sample_period;
+			if (period == 0)
+				PmcBegin(pmc);
+		}
+	}
+
 	for (;;)
 	{
+		bool		sample;
+		bool		hash_ok;
+
 		slot = ExecProcNode(outerNode);
 		if (TupIsNull(slot))
 			break;
 		/* We have to compute the hash value */
 		econtext->ecxt_outertuple = slot;
-		if (ExecHashGetHashValue(hashtable, econtext, hashkeys,
-								 false, hashtable->keepNulls,
-								 &hashvalue))
+		sample = unlikely(period > 0) && until_sample-- == 0;
+		if (sample)
+			PmcBegin(pmc);
+		hash_ok = ExecHashGetHashValue(hashtable, econtext, hashkeys,
+									   false, hashtable->keepNulls, &hashvalue);
+		if (sample)
+		{
+			PmcEnd(pmc);
+			until_sample = period - 1;
+		}
+		if (hash_ok)
 		{
 			int			bucketNumber;
 
@@ -189,6 +215,13 @@ MultiExecPrivateHash(HashState *node)
 			}
 			hashtable->totalTuples += 1;
 		}
+	}
+
+	if (pmc)
+	{
+		if (period == 0)
+			PmcEnd(pmc);
+		PmcReportAndClose(pmc);
 	}
 
 	/* resize the hash table if needed (NTUP_PER_BUCKET exceeded) */

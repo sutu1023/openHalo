@@ -59,6 +59,7 @@
 
 #include "adapter/mysql/adapter.h"
 
+#include "executor/halo_pmc.h"
 #include "funcapi.h"
 #include "jit/jit.h"
 #include "libpq/auth.h"
@@ -996,6 +997,15 @@ static const unit_conversion time_unit_conversion_table[] =
 
 static struct config_bool ConfigureNamesBool[] =
 {
+#ifdef __APPLE__
+	{
+		{"halo_pmc_use_process_reader", PGC_USERSET, STATS_MONITORING,
+			gettext_noop("Uses process-wide CPU counts for comparison with the macOS thread reader."),
+			NULL
+		},
+		&halo_pmc_use_process_reader, false, NULL, NULL, NULL
+	},
+#endif
 	{
 		{"enable_seqscan", PGC_USERSET, QUERY_TUNING_METHOD,
 			gettext_noop("Enables the planner's use of sequential-scan plans."),
@@ -2213,6 +2223,13 @@ static struct config_bool ConfigureNamesBool[] =
 
 static struct config_int ConfigureNamesInt[] =
 {
+	{
+		{"halo_pmc_sample_period", PGC_USERSET, STATS_MONITORING,
+			gettext_noop("Profiles the whole hash build (0) or the hash-key calculation every N input tuples."),
+			NULL
+		},
+		&halo_pmc_sample_period, 0, 0, INT_MAX, NULL, NULL, NULL
+	},
 	{
 		{"archive_timeout", PGC_SIGHUP, WAL_ARCHIVING,
 			gettext_noop("Forces a switch to the next WAL file if a "
@@ -3948,6 +3965,13 @@ static struct config_real ConfigureNamesReal[] =
 static struct config_string ConfigureNamesString[] =
 {
 	{
+		{"halo_pmc_list", PGC_USERSET, STATS_MONITORING,
+			gettext_noop("Selects CPU counters for backend-private Hash nodes."),
+			NULL, GUC_LIST_INPUT
+		},
+		&halo_pmc_list, "", PmcCheckList, NULL, NULL
+	},
+	{
 		{"archive_command", PGC_SIGHUP, WAL_ARCHIVING,
 			gettext_noop("Sets the shell command that will be called to archive a WAL file."),
 			NULL
@@ -5136,6 +5160,7 @@ static struct config_enum ConfigureNamesEnum[] =
  * semantics to the old.
  */
 static const char *const map_old_guc_names[] = {
+	"halo_watch_pmc_list", "halo_pmc_list",
 	"sort_mem", "work_mem",
 	"vacuum_mem", "maintenance_work_mem",
 	NULL
